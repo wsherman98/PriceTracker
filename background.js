@@ -5,27 +5,36 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
   const { products = [] } = await chrome.storage.local.get("products");
 
-  for (const product of products) {
+  for (let i = 0; i < products.length; i++) {
+    const product = products[i];
+
     try {
-      const res = await fetch(product.url);
-      const html = await res.text();
-      const match = html.match(/\$\d{1,3}(,\d{3})*(\.\d{2})?/);
-      const newPrice = match ? parseFloat(match[0].replace(/[^0-9.]/g, "")) : null;
+      // Open hidden tab to access DOM for dynamic prices
+      chrome.tabs.create({ url: product.url, active: false }, (tab) => {
+        chrome.scripting.executeScript(
+          { target: { tabId: tab.id }, files: ["content.js"] },
+          async (results) => {
+            if (results && results[0] && results[0].result) {
+              const newPrice = results[0].result.price;
 
-      if (newPrice && newPrice < product.price) {
-        chrome.notifications.create({
-          type: "basic",
-          iconUrl: "icon128.png",
-          title: "Price Drop!",
-          message: `${product.title} is now $${newPrice} (was $${product.price})`
-        });
+              if (newPrice && newPrice < product.price) {
+                chrome.notifications.create({
+                  type: "basic",
+                  iconUrl: "icon128.png",
+                  title: "Price Drop!",
+                  message: `${product.title} is now $${newPrice} (was $${product.price})`
+                });
 
-        product.price = newPrice;
-      }
+                product.price = newPrice;
+                await chrome.storage.local.set({ products });
+              }
+            }
+            chrome.tabs.remove(tab.id);
+          }
+        );
+      });
     } catch (e) {
       console.error("Error checking price:", e);
     }
   }
-
-  await chrome.storage.local.set({ products });
 });
