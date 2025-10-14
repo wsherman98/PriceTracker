@@ -1,40 +1,46 @@
-chrome.alarms.create("checkPrices", { periodInMinutes: 60 });
+chrome.alarms.create("checkPrices", { periodInMinutes: 1 }); // fast testing
 
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name !== "checkPrices") return;
-
+async function checkProducts() {
   const { products = [] } = await chrome.storage.local.get("products");
+  const tabs = await chrome.tabs.query({});
 
-  for (let i = 0; i < products.length; i++) {
-    const product = products[i];
+  for (let product of products) {
+    const tab = tabs.find(t => t.url === product.url);
+    if (!tab) continue;
 
     try {
-      // Open hidden tab to access DOM for dynamic prices
-      chrome.tabs.create({ url: product.url, active: false }, (tab) => {
-        chrome.scripting.executeScript(
-          { target: { tabId: tab.id }, files: ["content.js"] },
-          async (results) => {
-            if (results && results[0] && results[0].result) {
-              const newPrice = results[0].result.price;
-
-              if (newPrice && newPrice < product.price) {
-                chrome.notifications.create({
-                  type: "basic",
-                  iconUrl: "icon128.png",
-                  title: "Price Drop!",
-                  message: `${product.title} is now $${newPrice} (was $${product.price})`
-                });
-
-                product.price = newPrice;
-                await chrome.storage.local.set({ products });
-              }
-            }
-            chrome.tabs.remove(tab.id);
-          }
-        );
+      const result = await new Promise((resolve, reject) => {
+        chrome.tabs.sendMessage(tab.id, { action: "getProductData" }, (res) => {
+          if (chrome.runtime.lastError) return reject(chrome.runtime.lastError);
+          resolve(res);
+        });
       });
+
+      if (result && result.price && result.price < product.price) {
+        chrome.notifications.create({
+          type: "basic",
+          iconUrl: "icon128.png",
+          title: "Price Drop!",
+          message: `${product.title} is now $${result.price} (was $${product.price})`
+        });
+
+        product.price = result.price;
+        await chrome.storage.local.set({ products });
+      }
     } catch (e) {
-      console.error("Error checking price:", e);
+      console.error("Error checking product:", e);
     }
+  }
+}
+
+// Alarm-based check
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name === "checkPrices") checkProducts();
+});
+
+// Manual “Check Now” message from popup
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.action === "checkAllProducts") {
+    checkProducts();
   }
 });
