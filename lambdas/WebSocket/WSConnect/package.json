@@ -1,0 +1,12 @@
+{
+  "name": "add-update-tracking",
+  "version": "1.0.0",
+  "description": "Lambda function",
+  "type": "module",
+  "main": "index.mjs",
+  "dependencies": {
+    "aws-sdk": "^2.1692.0",
+    "axios": "^1.7.0",
+    "web-push": "^3.6.7"
+  }
+}

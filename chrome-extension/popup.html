@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Product Tracker</title>
+    <style>
+        body {
+          font-family: Arial, sans-serif;
+          width: 300px;
+          padding: 10px;
+        }
+        button {
+          display: block;
+          width: 100%;
+          margin: 5px 0;
+          padding: 8px;
+          font-size: 14px;
+        }
+        #product-list {
+          margin-top: 10px;
+          padding-left: 20px;
+          max-height: 150px;
+          overflow-y: auto;
+          border: 1px solid #ccc;
+        }
+        #status {
+          margin-top: 10px;
+          font-size: 13px;
+          color: #333;
+        }
+    </style>
+</head>
+<body>
+<h2>Product Tracker</h2>
+
+<button id="track-btn">Track Product</button>
+<button id="untrack-btn">Untrack Product</button>
+<button id="list-btn">List Tracked Products</button>
+<button id="update-btn">Update Tracking</button>
+
+<ul id="product-list" style="display:none"></ul>
+<p id="status"></p>
+
+<script src="popup.js"></script>
+</body>
+</html>
