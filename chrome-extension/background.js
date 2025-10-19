@@ -1,17 +1,19 @@
 // ============================
 // background.js
+// Manages WebSocket connection + notifications
+// Compatible with add/update Lambda endpoints
 // ============================
 
 let ws;
 let userId = "";
 
-// Get or create userId and connect WebSocket
+// Initialize WebSocket connection
 async function initWebSocket() {
   userId = await getOrCreateUserId();
   connectWebSocket();
 }
 
-// Generate or retrieve userId
+// Retrieve or create userId (persistent)
 function getOrCreateUserId() {
   return new Promise((resolve) => {
     chrome.storage.local.get(["userId"], (result) => {
@@ -24,56 +26,57 @@ function getOrCreateUserId() {
   });
 }
 
-// Listen for changes to userId (from popup)
+// Reconnect WebSocket if userId changes
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.userId) {
     userId = changes.userId.newValue;
-    connectWebSocket(); // reconnect with new userId
+    connectWebSocket();
   }
 });
 
-// Connect to WebSocket API
+// Connect WebSocket
 function connectWebSocket() {
   if (!userId) return;
 
-  // Close existing WS safely
+  // Clean up any existing socket
   if (ws) {
     ws.onclose = null;
     ws.close();
   }
 
-  // Replace with your deployed WebSocket API
+  // ✅ Use your deployed WebSocket endpoint
   const WS_URL = `wss://07aq8oq6zj.execute-api.us-east-1.amazonaws.com/production?userId=${userId}`;
   ws = new WebSocket(WS_URL);
 
-  ws.onopen = () => console.log("WebSocket connected");
+  ws.onopen = () => console.log("✅ WebSocket connected");
 
   ws.onmessage = (event) => {
     let msg;
     try {
       msg = JSON.parse(event.data);
-    } catch (e) {
-      console.error("Invalid JSON from WebSocket:", event.data);
+    } catch {
+      console.error("❌ Invalid WebSocket message:", event.data);
       return;
     }
 
-    if (msg.type === "notify" && msg.productUrl) {
+    // ✅ Notification logic
+    if (msg.type === "notify" && msg.url) {
       const notificationOptions = {
         type: "basic",
         title: "Product Update",
-        message: msg.message,
-        iconUrl: "icons/icon128.png"
+        message: msg.message || "Your tracked product has changed.",
+        iconUrl: "icons/icon128.png",
       };
 
       chrome.notifications.create("", notificationOptions, (notificationId) => {
-        function handleClick(clickedId) {
+        const handleClick = (clickedId) => {
           if (clickedId === notificationId) {
-            chrome.tabs.create({ url: msg.productUrl });
+            chrome.tabs.create({ url: msg.url });
             chrome.notifications.clear(notificationId);
           }
-        }
+        };
 
-        // Remove previous listeners to prevent duplicates
+        // Remove any previous listeners to avoid duplicates
         chrome.notifications.onClicked.removeListener(handleClick);
         chrome.notifications.onClicked.addListener(handleClick);
       });
@@ -81,15 +84,15 @@ function connectWebSocket() {
   };
 
   ws.onclose = () => {
-    console.log("WebSocket closed, reconnecting in 3s...");
+    console.warn("⚠️ WebSocket closed, retrying in 3s...");
     setTimeout(connectWebSocket, 3000);
   };
 
   ws.onerror = (err) => {
-    console.error("WebSocket error:", err);
+    console.error("❌ WebSocket error:", err);
     ws.close();
   };
 }
 
-// Initialize on background start
+// Start everything
 initWebSocket();

@@ -1,36 +1,18 @@
 import AWS from "aws-sdk";
 
 const dynamo = new AWS.DynamoDB.DocumentClient();
-const TABLE_NAME = process.env.PRODUCT_TRACKING_TABLE || "TrackedProducts";
+const apigw = new AWS.ApiGatewayManagementApi({
+  endpoint: process.env.WS_ENDPOINT || "07aq8oq6zj.execute-api.us-east-1.amazonaws.com/production"
+});
+const PRODUCT_TABLE = process.env.PRODUCT_TRACKING_TABLE || "TrackedProducts";
+const WS_TABLE = process.env.WS_CONNECTIONS_TABLE || "WSConnections";
 
 export async function handler(event) {
-  // Ensure userId exists
-  const userId = event.queryStringParameters?.userId;
-  if (!userId) {
-    return {
-      statusCode: 400,
-      body: JSON.stringify({ error: "Missing required query parameter: userId" }),
-    };
-  }
+  if (!event.body) return { statusCode: 400, body: "No body provided" };
+  const { userId, productUrl, trackStock = true, lastPrice = null, lastStockStatus = null } = JSON.parse(event.body);
+  if (!userId || !productUrl) return { statusCode: 400, body: "Missing required fields" };
 
-  // Query DynamoDB for all products tracked by this user
-  let result;
+  let existing;
   try {
-    result = await dynamo.query({
-      TableName: TABLE_NAME,
-      KeyConditionExpression: "userId = :uid",
-      ExpressionAttributeValues: { ":uid": userId },
-    }).promise();
-  } catch (err) {
-    console.error("DynamoDB query error:", err);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: "Failed to fetch tracked products" }),
-    };
-  }
+    const res = await dynamo.get({ TableName: PRODUCT_TABLE, Key: { userId, productUrl } }).promise();
 
-  return {
-    statusCode: 200,
-    body: JSON.stringify({ items: result.Items || [] }),
-  };
-}

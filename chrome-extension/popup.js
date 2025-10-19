@@ -1,12 +1,16 @@
-const API_BASE = "https://z4ptnk59cf.execute-api.us-east-1.amazonaws.com/prod"; // your API Gateway base URL
+const API_BASE = "https://z4ptnk59cf.execute-api.us-east-1.amazonaws.com/prod";
 
-// Get current tab URL
+// ============================
+// Helpers
+// ============================
+
+// Get current active tab URL
 async function getCurrentTabUrl() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab.url;
 }
 
-// Ensure userId exists
+// Get or create userId
 async function getOrCreateUserId() {
   return new Promise((resolve) => {
     chrome.storage.local.get(["userId"], (result) => {
@@ -19,53 +23,91 @@ async function getOrCreateUserId() {
   });
 }
 
-// Helper to call API
+// Generic API helper
 async function callApi(path, body = {}, method = "POST") {
-  const response = await fetch(`${API_BASE}/${path}`, {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: method === "GET" ? undefined : JSON.stringify(body),
-  });
-  if (!response.ok) throw new Error(`API ${path} failed`);
-  return response.json();
-}
-
-// Track current product
-async function trackProduct() {
-  const statusEl = document.getElementById("status");
-  statusEl.textContent = "Tracking product...";
-
   try {
-    const userId = await getOrCreateUserId();
-    const productUrl = await getCurrentTabUrl();
-    const trackStock = productUrl.includes("out-of-stock"); // simple heuristic
+    const response = await fetch(`${API_BASE}/${path}`, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: method === "GET" ? undefined : JSON.stringify(body),
+    });
 
-    await callApi("add-update", { userId, productUrl, trackStock });
-    statusEl.textContent = "Product tracked!";
+    const data = await response.json().catch(() => ({}));
+
+    if (!response.ok) throw new Error(data.error || `API ${path} failed`);
+    return data;
   } catch (err) {
-    console.error(err);
-    document.getElementById("status").textContent = "Failed to track product.";
+    console.error(`API call failed: ${path}`, err);
+    throw err;
   }
 }
 
-// Untrack current product
+// ============================
+// Button functions
+// ============================
+
+async function trackProduct() {
+  const statusEl = document.getElementById("status");
+  statusEl.textContent = "Adding product tracking...";
+
+  try {
+    const userId = await getOrCreateUserId();
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const url = tab.url;
+
+    // Get current price and stock from content script
+    const { price: currentPrice, inStock: currentStockStatus } = await new Promise((resolve) => {
+      chrome.tabs.sendMessage(tab.id, { type: "getProductInfo" }, resolve);
+    });
+
+    const trackStock = true;
+
+    const data = await callApi("add", {
+      userId,
+      url,
+      trackStock,
+      currentPrice,
+      currentStockStatus,
+    });
+
+    statusEl.textContent = data.message || "Product tracking added!";
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = err.message || "Failed to track product.";
+  }
+}
+
+async function updateProduct() {
+  const statusEl = document.getElementById("status");
+  statusEl.textContent = "Updating product tracking...";
+
+  try {
+    const userId = await getOrCreateUserId();
+    const url = await getCurrentTabUrl();
+    const currentPrice = null;
+    const currentStockStatus = null;
+
+    const data = await callApi("update", { userId, url, currentPrice, currentStockStatus });
+    statusEl.textContent = data.message || "Product updated!";
+  } catch (err) {
+    statusEl.textContent = err.message || "Failed to update product.";
+  }
+}
+
 async function untrackProduct() {
   const statusEl = document.getElementById("status");
   statusEl.textContent = "Removing product...";
 
   try {
     const userId = await getOrCreateUserId();
-    const productUrl = await getCurrentTabUrl();
-
-    await callApi("remove", { userId, productUrl });
-    statusEl.textContent = "Product untracked!";
+    const url = await getCurrentTabUrl();
+    const data = await callApi("remove", { userId, url });
+    statusEl.textContent = data.message || "Product untracked!";
   } catch (err) {
-    console.error(err);
-    statusEl.textContent = "Failed to untrack product.";
+    statusEl.textContent = err.message || "Failed to untrack product.";
   }
 }
 
-// List all tracked products
 async function listProducts() {
   const listEl = document.getElementById("product-list");
   const statusEl = document.getElementById("status");
@@ -78,39 +120,23 @@ async function listProducts() {
 
     listEl.innerHTML = "";
     if (!items || items.length === 0) listEl.innerHTML = "<li>No tracked products</li>";
-    else items.forEach((item) => {
+    else items.forEach(item => {
       const li = document.createElement("li");
-      li.textContent = item.SK;
+      li.textContent = item.url;
       listEl.appendChild(li);
     });
 
     statusEl.textContent = "Tracked products loaded.";
   } catch (err) {
-    console.error(err);
     statusEl.textContent = "Failed to list products.";
   }
 }
 
-// Update tracking for current product
-async function updateTracking() {
-  const statusEl = document.getElementById("status");
-  statusEl.textContent = "Updating tracking...";
-
-  try {
-    const userId = await getOrCreateUserId();
-    const productUrl = await getCurrentTabUrl();
-    const trackStock = productUrl.includes("out-of-stock");
-
-    await callApi("add-update", { userId, productUrl, trackStock });
-    statusEl.textContent = "Tracking updated!";
-  } catch (err) {
-    console.error(err);
-    statusEl.textContent = "Failed to update tracking.";
-  }
-}
-
+// ============================
 // Event listeners
+// ============================
+
 document.getElementById("track-btn").addEventListener("click", trackProduct);
+document.getElementById("update-btn").addEventListener("click", updateProduct);
 document.getElementById("untrack-btn").addEventListener("click", untrackProduct);
 document.getElementById("list-btn").addEventListener("click", listProducts);
-document.getElementById("update-btn").addEventListener("click", updateTracking);
